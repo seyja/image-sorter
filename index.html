@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Image Sorter</title>
+		<style>
+			#canvas {
+				border: 1px solid black;
+				background-color: white;
+			}
+			body {
+				background-color: black;
+			}
+			#sortTime {
+				color: aliceblue;
+			}
+		</style>
+	</head>
+	<body>
+		<button id="sortButton1"></button>
+		<button id="sortButton2"></button>
+		<input type="file" id="fileInput" accept="image/png, image/*" />
+		<br />
+		<canvas id="canvas"></canvas>
+		<div id="sortTime"></div>
+		<a id="downloadButton" style="display: none; color: cyan"
+			>Download Sorted Image</a
+		>
+		<script>
+			const defaultLanguage = "en";
+			document.documentElement.setAttribute("lang", defaultLanguage);
+			document
+				.getElementById("fileInput")
+				.addEventListener("change", handleFile, false);
+			document
+				.getElementById("sortButton1")
+				.addEventListener("click", sortPixels1, false);
+			document
+				.getElementById("sortButton2")
+				.addEventListener("click", sortPixels2, false);
+			document
+				.getElementById("downloadButton")
+				.addEventListener("click", downloadImage, false);
+			let imageData;
+			let pixels;
+			let currentColumn = 0;
+			let currentRow = 0;
+			let sortInterval;
+			const chunkSize = 200;
+			let startTime;
+			let sortDirection = "vertical";
+			function handleFile(e) {
+				const file = e.target.files[0];
+				const reader = new FileReader();
+				reader.onload = function (event) {
+					const img = new Image();
+					img.onload = function () {
+						const canvas = document.getElementById("canvas");
+						const ctx = canvas.getContext("2d");
+						canvas.width = img.width;
+						canvas.height = img.height;
+						ctx.drawImage(img, 0, 0, img.width, img.height);
+						imageData = ctx.getImageData(0, 0, canvas.width, canvas.height, {
+							willReadFrequently: true,
+						});
+						pixels = new Uint32Array(imageData.data.buffer);
+					};
+					img.src = event.target.result;
+				};
+				reader.readAsDataURL(file);
+			}
+			function sortPixels1() {
+				clearInterval(sortInterval);
+				currentColumn = 0;
+				startTime = performance.now();
+				sortInterval = setInterval(sortNextColumn, 1);
+				const endTime = performance.now();
+				const sortTime = endTime - startTime;
+				displaySortTime(sortTime);
+				showDownloadButton();
+			}
+			function sortPixels2() {
+				clearInterval(sortInterval);
+				currentRow = 0;
+				startTime = performance.now();
+				sortInterval = setInterval(sortNextRow, 1);
+				const endTime = performance.now();
+				const sortTime = endTime - startTime;
+				displaySortTime(sortTime);
+				showDownloadButton();
+			}
+			function sortNextColumn() {
+				if (currentColumn >= imageData.width) {
+					clearInterval(sortInterval);
+					const endTime = performance.now();
+					const sortTime = endTime - startTime;
+					displaySortTime(sortTime);
+					showDownloadButton();
+					return;
+				}
+				const startColumn = currentColumn;
+				const endColumn = Math.min(currentColumn + chunkSize, imageData.width);
+				const chunkWidth = endColumn - startColumn;
+				for (
+					let columnIndex = startColumn;
+					columnIndex < endColumn;
+					columnIndex++
+				) {
+					const column = getColumnPixels(columnIndex);
+					if (Math.random() > 0.8) column.sort(comparePixels);
+					setColumnPixels(pixels, columnIndex, column);
+				}
+				currentColumn += chunkWidth;
+				const canvas = document.getElementById("canvas");
+				const ctx = canvas.getContext("2d");
+				ctx.putImageData(imageData, 0, 0);
+			}
+			function sortNextRow() {
+				if (currentRow >= imageData.height) {
+					clearInterval(sortInterval);
+					const endTime = performance.now();
+					const sortTime = endTime - startTime;
+					displaySortTime(sortTime);
+					showDownloadButton();
+					return;
+				}
+				const startRow = currentRow;
+				const endRow = Math.min(currentRow + chunkSize, imageData.height);
+				const chunkHeight = endRow - startRow;
+				for (let rowIndex = startRow; rowIndex < endRow; rowIndex++) {
+					const row = getRowPixels(rowIndex);
+					if (Math.random() > 0.8) row.sort(comparePixels);
+					setRowPixels(pixels, rowIndex, row);
+				}
+				currentRow += chunkHeight;
+				const canvas = document.getElementById("canvas");
+				const ctx = canvas.getContext("2d");
+				ctx.putImageData(imageData, 0, 0);
+			}
+			function getColumnPixels(columnIndex) {
+				const column = new Uint32Array(imageData.height);
+				for (let rowIndex = 0; rowIndex < imageData.height; rowIndex++) {
+					const pixelIndex = rowIndex * imageData.width + columnIndex;
+					column[rowIndex] = pixels[pixelIndex];
+				}
+				return column;
+			}
+			function getRowPixels(rowIndex) {
+				const row = new Uint32Array(imageData.width);
+				for (
+					let columnIndex = 0;
+					columnIndex < imageData.width;
+					columnIndex++
+				) {
+					const pixelIndex = rowIndex * imageData.width + columnIndex;
+					row[columnIndex] = pixels[pixelIndex];
+				}
+				return row;
+			}
+			function setColumnPixels(arr, columnIndex, column) {
+				for (let rowIndex = 0; rowIndex < imageData.height; rowIndex++) {
+					const pixelIndex = rowIndex * imageData.width + columnIndex;
+					arr[pixelIndex] = column[rowIndex];
+				}
+			}
+			function setRowPixels(arr, rowIndex, row) {
+				for (
+					let columnIndex = 0;
+					columnIndex < imageData.width;
+					columnIndex++
+				) {
+					const pixelIndex = rowIndex * imageData.width + columnIndex;
+					arr[pixelIndex] = row[columnIndex];
+				}
+			}
+			function comparePixels(pixelA, pixelB) {
+				const hueA = getHue(pixelA);
+				const hueB = getHue(pixelB);
+				if (hueA === hueB) {
+					const blueA = getBlue(pixelA);
+					const blueB = getBlue(pixelB);
+					return blueA - blueB;
+				}
+				return hueA - hueB;
+			}
+			function getHue(pixel) {
+				const red = (pixel >> 16) & 255;
+				const green = (pixel >> 8) & 255;
+				const blue = pixel & 255;
+				const max = Math.max(red, green, blue);
+				const min = Math.min(red, green, blue);
+				let hue;
+				if (max === min) {
+					hue = 0;
+				} else if (max === red) {
+					hue = ((green - blue) / (max - min)) % 6;
+				} else if (max === green) {
+					hue = (blue - red) / (max - min) + 2;
+				} else {
+					hue = (red - green) / (max - min) + 4;
+				}
+				hue = Math.round(hue * 60);
+				if (hue < 0) hue += 360;
+				return hue;
+			}
+			function getBlue(pixel) {
+				return pixel & 255;
+			}
+			function displaySortTime(sortTime) {
+				const sortTimeElement = document.getElementById("sortTime");
+				sortTimeElement.textContent = `Sort time: ${sortTime.toFixed(
+					2,
+				)} milliseconds`;
+			}
+			function showDownloadButton() {
+				const downloadButton = document.getElementById("downloadButton");
+				downloadButton.style.display = "inline-block";
+			}
+			function downloadImage() {
+				const canvas = document.getElementById("canvas");
+				const dataURL = canvas.toDataURL("image/png");
+				const a = document.createElement("a");
+				a.href = dataURL;
+				a.download = "sorted_image.png";
+				a.click();
+			}
+		</script>
+	</body>
+</html>
